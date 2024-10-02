@@ -37,9 +37,6 @@
     <Copy SourceFiles="$(OutputPath)\$(AssemblyName).pdb" DestinationFolder="..\bin"/>
 
     <Copy SourceFiles="$(OutputPath)Tracy.dll" DestinationFolder="..\bin"/>
-    <Copy SourceFiles="$(OutputPath)runtimes\linux-x64\native\TracyClient.so" DestinationFiles="..\bin\lib-linux\libTracyClient.so"/>
-    <Copy SourceFiles="$(OutputPath)runtimes\osx\native\TracyClient.dylib" DestinationFiles="..\bin\lib-osx\libTracyClient.sdylib"/>
-    <Copy SourceFiles="$(OutputPath)runtimes\win-x64\native\TracyClient.dll" DestinationFiles="..\bin\lib-win-x64\TracyClient.dll"/>
   </Target>
 
   <Target Name="PackageMod" AfterTargets="CopyFiles" Inputs="$(ZippedFiles)" Outputs="..\TracyHelper.zip" Condition="'$(Configuration)' == 'Release'">
