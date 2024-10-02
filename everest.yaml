@@ -1,0 +1,6 @@
+- Name: TracyHelper
+  Version: 0.1.0
+  DLL: bin/TracyHelper.dll
+  Dependencies:
+    - Name: EverestCore
+      Version: 1.4673.0
