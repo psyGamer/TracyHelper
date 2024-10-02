@@ -1,7 +1,7 @@
 const std = @import("std");
 
 /// On-demand profiling
-const tracy_on_demand: bool = false;
+const tracy_on_demand: bool = true;
 /// Enforce callstack collection for tracy regions
 const tracy_callstack: ?u8 = null;
 /// Disable all callstack related functionality
