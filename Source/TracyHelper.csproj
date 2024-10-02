@@ -5,6 +5,8 @@
     <AssemblyName>TracyHelper</AssemblyName>
     <RootNamespace>Celeste.Mod.TracyHelper</RootNamespace>
     <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <CelestePrefix Condition="'$(CelestePrefix)' == '' And Exists('..\..\..\Celeste.dll')">..\..\..</CelestePrefix>
     <CelestePrefix Condition="'$(CelestePrefix)' == ''">lib-stripped</CelestePrefix>
     <ZippedFiles>..\everest.yaml;..\bin\**\*.*;..\Audio\**\*.*;..\Dialog\**\*.*;..\Graphics\**\*.*;..\Ahorn\**\*.*;..\Loenn\**\*.*</ZippedFiles>
@@ -17,9 +19,11 @@
   </ItemDefinitionGroup>
 
   <ItemGroup>
-    <PackageReference Include="MonoMod.RuntimeDetour" Version="25.0.2" PrivateAssets="all" ExcludeAssets="runtime"/>
+    <PackageReference Include="MonoMod.RuntimeDetour" Version="25.0.2"/>
     <PackageReference Include="MonoMod.Patcher" Version="25.0.0-prerelease.2"/>
     <PackageReference Include="CelesteAnalyzer" Version="*"/>
+
+    <PackageReference Include="Tracy-CSharp" Version="0.11.1" ExcludeAssets="none"/>
   </ItemGroup>
 
   <ItemGroup>
@@ -31,6 +35,11 @@
   <Target Name="CopyFiles" AfterTargets="Build" Inputs="$(OutputPath)\$(AssemblyName).dll;$(OutputPath)\$(AssemblyName).pdb" Outputs="..\bin\$(AssemblyName).dll;..\bin\$(AssemblyName).pdb">
     <Copy SourceFiles="$(OutputPath)\$(AssemblyName).dll" DestinationFolder="..\bin"/>
     <Copy SourceFiles="$(OutputPath)\$(AssemblyName).pdb" DestinationFolder="..\bin"/>
+
+    <Copy SourceFiles="$(OutputPath)Tracy.dll" DestinationFolder="..\bin"/>
+    <Copy SourceFiles="$(OutputPath)runtimes\linux-x64\native\TracyClient.so" DestinationFiles="..\bin\lib-linux\libTracyClient.so"/>
+    <Copy SourceFiles="$(OutputPath)runtimes\osx\native\TracyClient.dylib" DestinationFiles="..\bin\lib-osx\libTracyClient.sdylib"/>
+    <Copy SourceFiles="$(OutputPath)runtimes\win-x64\native\TracyClient.dll" DestinationFiles="..\bin\lib-win-x64\TracyClient.dll"/>
   </Target>
 
   <Target Name="PackageMod" AfterTargets="CopyFiles" Inputs="$(ZippedFiles)" Outputs="..\TracyHelper.zip" Condition="'$(Configuration)' == 'Release'">
@@ -59,7 +68,7 @@
         <![CDATA[
                 var projectDir = Path.Combine(@"$(ProjectDir)", ".."); // Go one level up, since we're inside the 'Source' directory
                 projectDir = Uri.UnescapeDataString(projectDir);
-            
+
                 if (File.Exists(OutputPath))
                     File.Delete(OutputPath);
 
@@ -69,29 +78,29 @@
                     {
                         string filePath = file.GetMetadata("FullPath");
                         string entryName = GetRelativePath(projectDir, filePath);
-                        
+
                         zip.CreateEntryFromFile(filePath, entryName);
                     }
                 }
-    
+
                 string GetRelativePath(string fromPath, string toPath)
                 {
                     if (string.IsNullOrEmpty(fromPath)) throw new ArgumentNullException(nameof(fromPath));
                     if (string.IsNullOrEmpty(toPath))   throw new ArgumentNullException(nameof(toPath));
-                
+
                     Uri fromUri = new Uri(fromPath);
                     Uri toUri = new Uri(toPath);
-                
+
                     if (fromUri.Scheme != toUri.Scheme) { return toPath; } // path can't be made relative.
-                
+
                     Uri relativeUri = fromUri.MakeRelativeUri(toUri);
                     string relativePath = Uri.UnescapeDataString(relativeUri.ToString());
-                
+
                     if (toUri.Scheme.Equals("file", StringComparison.InvariantCultureIgnoreCase))
                     {
                         relativePath = relativePath.Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                     }
-                
+
                     return relativePath;
                 }
             ]]>
