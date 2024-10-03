@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using Microsoft.Xna.Framework;
 using Mono.Cecil.Cil;
 using Monocle;
@@ -20,6 +22,33 @@ public static class InstrumentationInjector {
 
         On.Monocle.EntityList.Add_Entity += On_EntityList_Add;
         On.Monocle.ComponentList.Add_Component += On_ComponentList_Add;
+
+        ProfileMethod(typeof(EntityList).GetMethod(nameof(EntityList.Update), BindingFlags.NonPublic | BindingFlags.Instance)!, "Entity Update", 0x1064C3);
+        ProfileMethod(typeof(EntityList).GetMethod(nameof(EntityList.Render))!, "Entity Render", 0x1B9D45);
+        ProfileMethod(typeof(EntityList).GetMethod(nameof(EntityList.RenderOnly))!, null, 0x1B9D45, null, null, NameEntityRenderOnly);
+        ProfileMethod(typeof(EntityList).GetMethod(nameof(EntityList.RenderOnlyFullMatch))!, null, 0x1B9D45, null, null, NameEntityRenderOnlyFullMatch);
+        ProfileMethod(typeof(EntityList).GetMethod(nameof(EntityList.RenderExcept))!, null, 0x1B9D45, null, null, NameEntityRenderExcept);
+
+        return;
+
+        static string NameEntityRenderOnly(EntityList _, int tags) => $"Entity Render Only ({TagsToString(tags)})";
+        static string NameEntityRenderOnlyFullMatch(EntityList _, int tags) => $"Entity Render OnlyFullMatch ({TagsToString(tags)})";
+        static string NameEntityRenderExcept(EntityList _, int tags) => $"Entity Render Except ({TagsToString(tags)})";
+
+        static string TagsToString(int tag) {
+            StringBuilder builder = new();
+            for (int id = 0; id < BitTag.TotalTags; id++) {
+                int mask = 1 << id;
+                if ((tag & mask) != 0) {
+                    if (builder.Length != 0) {
+                        builder.Append(" | ");
+                    }
+
+                    builder.Append(BitTag.byID[id].Name);
+                }
+            }
+            return builder.ToString();
+        }
     }
     public static void Unload() {
         On.Monocle.EntityList.Add_Entity -= On_EntityList_Add;
@@ -68,15 +97,15 @@ public static class InstrumentationInjector {
     private static void On_ComponentList_Add(On.Monocle.ComponentList.orig_Add_Component orig, ComponentList self, Component component) {
         var componentType = component.GetType();
         if (profiledTypes.Add(componentType.FullName!)) {
-            ProfileMethod(componentType.GetMethod(nameof(Component.Update), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, []), null, 0x659CD9, $"{componentType.FullName}::{nameof(Component.Update)}", $"{componentType.Name}.cs");
-            ProfileMethod(componentType.GetMethod(nameof(Component.Render), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, []), null, 0x6ECC8D, $"{componentType.FullName}::{nameof(Component.Render)}", $"{componentType.Name}.cs");
+            ProfileMethod(componentType.GetMethod(nameof(Component.Update), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, []), null, 0x90ACCC, $"{componentType.FullName}::{nameof(Component.Update)}", $"{componentType.Name}.cs");
+            ProfileMethod(componentType.GetMethod(nameof(Component.Render), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, []), null, 0xA2ECBA, $"{componentType.FullName}::{nameof(Component.Render)}", $"{componentType.Name}.cs");
         }
 
         orig(self, component);
     }
 
     /// Inserts a profiler zone for the specified method
-    private static void ProfileMethod(MethodInfo? method, string? zoneName = null, uint color = 0, string? memberName = null, string? fileName = null) {
+    private static void ProfileMethod(MethodInfo? method, string? zoneName = null, uint color = 0, string? memberName = null, string? fileName = null, Delegate? customZoneName = null) {
         if (method == null) {
             return;
         }
@@ -105,7 +134,7 @@ public static class InstrumentationInjector {
             }
 
             // Begin profiler zone
-            cur.EmitZoneStart(zoneVar, method, zoneName, color, memberName, fileName);
+            cur.EmitZoneStart(zoneVar, method, zoneName, color, memberName, fileName, customZoneName);
 
             // Begin try-block
             exceptionHandler.TryStart = cur.Next;
@@ -164,9 +193,15 @@ public static class InstrumentationInjector {
         }));
     }
 
-    private static void EmitZoneStart(this ILCursor cur, VariableReference zoneVariable, MethodInfo method, string? zoneName = null, uint color = 0, string? memberName = null, string? fileName = null)
+    private static void EmitZoneStart(this ILCursor cur, VariableReference zoneVariable, MethodInfo method, string? zoneName = null, uint color = 0, string? memberName = null, string? fileName = null, Delegate? customZoneName = null)
     {
-        if (zoneName == null) {
+        if (customZoneName != null) {
+            int paramCount = method.GetParameters().Length + (method.IsStatic ? 0 : 1);
+            for (int i = 0; i < paramCount; i++) {
+                cur.EmitLdarg(i);
+            }
+            cur.EmitDelegate(customZoneName);
+        } else if (zoneName == null) {
             cur.EmitLdnull(); // zoneName
         } else {
             cur.EmitLdstr(zoneName);
