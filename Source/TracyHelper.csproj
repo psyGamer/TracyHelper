@@ -22,8 +22,6 @@
     <PackageReference Include="MonoMod.RuntimeDetour" Version="25.0.2"/>
     <PackageReference Include="MonoMod.Patcher" Version="25.0.0-prerelease.2"/>
     <PackageReference Include="CelesteAnalyzer" Version="*"/>
-
-    <PackageReference Include="Tracy-CSharp" Version="0.11.1" ExcludeAssets="none"/>
   </ItemGroup>
 
   <ItemGroup>
@@ -35,8 +33,6 @@
   <Target Name="CopyFiles" AfterTargets="Build" Inputs="$(OutputPath)\$(AssemblyName).dll;$(OutputPath)\$(AssemblyName).pdb" Outputs="..\bin\$(AssemblyName).dll;..\bin\$(AssemblyName).pdb">
     <Copy SourceFiles="$(OutputPath)\$(AssemblyName).dll" DestinationFolder="..\bin"/>
     <Copy SourceFiles="$(OutputPath)\$(AssemblyName).pdb" DestinationFolder="..\bin"/>
-
-    <Copy SourceFiles="$(OutputPath)Tracy.dll" DestinationFolder="..\bin"/>
   </Target>
 
   <Target Name="PackageMod" AfterTargets="CopyFiles" Inputs="$(ZippedFiles)" Outputs="..\TracyHelper.zip" Condition="'$(Configuration)' == 'Release'">

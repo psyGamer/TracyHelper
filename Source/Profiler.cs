@@ -1,8 +1,7 @@
 using System;
-using System.Collections.Generic;
 using System.Runtime.CompilerServices;
-using bottlenoselabs.C2CS.Runtime;
-using static Tracy.PInvoke;
+using Celeste.Mod.TracyHelper.Tracy;
+using static Celeste.Mod.TracyHelper.Tracy.PInvoke;
 
 namespace Celeste.Mod.TracyHelper;
 
@@ -11,12 +10,12 @@ public static class Profiler {
 
     /// Wrapper around tracy zones
     public readonly struct Zone : IDisposable {
-        private readonly TracyCZoneCtx Context;
+        private readonly PInvoke.TracyCZoneCtx Context;
 
         public uint Id => Context.Data.Id;
         public int Active => Context.Data.Active;
 
-        internal Zone(TracyCZoneCtx context) {
+        internal Zone(PInvoke.TracyCZoneCtx context) {
             Context = context;
         }
 
@@ -91,7 +90,7 @@ public static class Profiler {
 
     #endregion
     #region Plots
-
+/*
     public enum PlotType {
         /// <summary>
         /// Values will be displayed as plain numbers.
@@ -163,7 +162,7 @@ public static class Profiler {
         }
         return plotCString;
     }
-
+*/
     #endregion
     #region General
 

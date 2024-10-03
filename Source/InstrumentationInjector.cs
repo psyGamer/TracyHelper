@@ -164,7 +164,7 @@ public static class InstrumentationInjector {
         cur.EmitLdnull(); // text
         cur.EmitLdcI4(0); // lineNumber
         cur.EmitLdstr(fileName ?? $"{method.DeclaringType!.Name}.cs"); // filePath
-        cur.EmitLdstr(memberName ?? $"{method.DeclaringType.FullName}::{method.Name}"); // memberName
+        cur.EmitLdstr(memberName ?? $"{method.DeclaringType!.FullName}::{method.Name}"); // memberName
         cur.EmitDelegate(Profiler.BeginZone);
         cur.EmitStloc(zoneVariable);
     }
