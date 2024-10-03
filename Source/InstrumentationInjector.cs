@@ -30,9 +30,13 @@ public static class InstrumentationInjector {
             ProfileMethod(sceneType.GetMethod(nameof(Scene.BeforeUpdate), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)!, new ProfileConfig { Color = 0x2B7FDB });
             ProfileMethod(sceneType.GetMethod(nameof(Scene.Update), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)!, new ProfileConfig { Color = 0x2B7FDB });
             ProfileMethod(sceneType.GetMethod(nameof(Scene.AfterUpdate), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)!, new ProfileConfig { Color = 0x2B7FDB });
+
             ProfileMethod(sceneType.GetMethod(nameof(Scene.BeforeRender), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)!, new ProfileConfig { Color = 0x21CC58 });
             ProfileMethod(sceneType.GetMethod(nameof(Scene.Render), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)!, new ProfileConfig { Color = 0x21CC58 });
             ProfileMethod(sceneType.GetMethod(nameof(Scene.AfterRender), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)!, new ProfileConfig { Color = 0x21CC58 });
+
+            ProfileMethod(sceneType.GetMethod(nameof(Scene.End), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)!, new ProfileConfig { Color = 0x21CC58 });
+            ProfileMethod(sceneType.GetMethod(nameof(Scene.Begin), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)!, new ProfileConfig { Color = 0x21CC58 });
         }
 
         // Misc
@@ -63,7 +67,11 @@ public static class InstrumentationInjector {
         ProfileMethod(typeof(Renderer).GetMethod(nameof(Renderer.AfterRender))!, new ProfileConfig { ZoneName = "Renderers AfterRender", Color = 0x1B9D45 });
 
         // Loading
+        IL.Celeste.LevelLoader.LoadingThread += IL_LoadingThread;
+        ProfileMethod(typeof(SaveData).GetMethod(nameof(SaveData.StartSession))!, new ProfileConfig { Color = 0x8856D2 });
+        ProfileMethod(typeof(ParticleSystem).GetConstructor([typeof(int), typeof(int)])!, new ProfileConfig { Color = 0x8856D2 });
 
+        ProfileMethod(typeof(Engine).GetMethod(nameof(Engine.OnSceneTransition), BindingFlags.NonPublic | BindingFlags.Instance)!, new ProfileConfig { ZoneName = "Scene Transition GC", Color = 0xD68003 });
 
         return;
 
@@ -92,6 +100,8 @@ public static class InstrumentationInjector {
         On.Monocle.RendererList.Add -= On_RendererList_Add;
 
         IL.Celeste.RunThread.RunThreadWithLogging -= IL_RunThreadWithLogging;
+
+        IL.Celeste.LevelLoader.LoadingThread -= IL_LoadingThread;
 
         profiledTypes.Clear();
     }
@@ -151,6 +161,9 @@ public static class InstrumentationInjector {
         if (profiledTypes.Add(entityType.FullName!)) {
             ProfileMethod(entityType.GetMethod(nameof(Entity.Update), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, []), new ProfileConfig { Color = 0x659CD9 });
             ProfileMethod(entityType.GetMethod(nameof(Entity.Render), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, []), new ProfileConfig { Color = 0x6ECC8D });
+
+            ProfileMethod(entityType.GetMethod(nameof(Entity.SceneBegin), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, [typeof(Scene)]), new ProfileConfig { Color = 0x6ECC8D });
+            ProfileMethod(entityType.GetMethod(nameof(Entity.SceneEnd), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, [typeof(Scene)]), new ProfileConfig { Color = 0x6ECC8D });
         }
 
         orig(self, entity);
@@ -160,6 +173,8 @@ public static class InstrumentationInjector {
         if (profiledTypes.Add(componentType.FullName!)) {
             ProfileMethod(componentType.GetMethod(nameof(Component.Update), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, []), new ProfileConfig { Color = 0x90ACCC });
             ProfileMethod(componentType.GetMethod(nameof(Component.Render), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, []), new ProfileConfig { Color = 0xA2ECBA });
+
+            ProfileMethod(componentType.GetMethod(nameof(Component.SceneEnd), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, [typeof(Scene)]), new ProfileConfig { Color = 0x6ECC8D });
         }
 
         orig(self, component);
@@ -168,12 +183,34 @@ public static class InstrumentationInjector {
         var rendererType = renderer.GetType();
         if (profiledTypes.Add(rendererType.FullName!)) {
             ProfileMethod(rendererType.GetMethod(nameof(Renderer.Update), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, [typeof(Scene)]), new ProfileConfig { Color = 0x416996 });
+
             ProfileMethod(rendererType.GetMethod(nameof(Renderer.BeforeRender), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, [typeof(Scene)]), new ProfileConfig { Color = 0x499B63 });
             ProfileMethod(rendererType.GetMethod(nameof(Renderer.Render), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, [typeof(Scene)]), new ProfileConfig { Color = 0x499B63 });
             ProfileMethod(rendererType.GetMethod(nameof(Renderer.AfterRender), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, [typeof(Scene)]), new ProfileConfig { Color = 0x499B63 });
         }
 
         orig(self, renderer);
+    }
+
+    private static void IL_LoadingThread(ILContext il) {
+        var method = typeof(LevelLoader).GetMethod(nameof(LevelLoader.LoadingThread), BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        var zoneVar = new VariableDefinition(il.Import(typeof(Profiler.Zone)));
+        il.Body.Variables.Add(zoneVar);
+
+        var cur = new ILCursor(il);
+
+        cur.EmitZoneStart(zoneVar, method, new ProfileConfig { ZoneName = "Setup Renderers", Color = 0x7A36DF });
+        cur.GotoNext(MoveType.After, instr => instr.MatchCallvirt<RendererList>(nameof(RendererList.UpdateLists)));
+        cur.EmitZoneEnd(zoneVar);
+
+        cur.EmitZoneStart(zoneVar, method, new ProfileConfig { ZoneName = "Setup systems", Color = 0x7A36DF });
+        cur.GotoNext(instr => instr.MatchLdsfld("Celeste.GFX", nameof(GFX.FGAutotiler)));
+        cur.EmitZoneEnd(zoneVar);
+
+        cur.EmitZoneStart(zoneVar, method, new ProfileConfig { ZoneName = "Setup tiles", Color = 0x7A36DF });
+        cur.Index = il.Instrs.Count - 1;
+        cur.EmitZoneEnd(zoneVar);
     }
 
     private struct ProfileConfig() {
@@ -188,7 +225,7 @@ public static class InstrumentationInjector {
     }
 
     /// Inserts a profiler zone for the specified method
-    private static void ProfileMethod(MethodInfo? method, ProfileConfig config) {
+    private static void ProfileMethod(MethodBase? method, ProfileConfig config) {
         if (method == null) {
             return;
         }
@@ -212,7 +249,8 @@ public static class InstrumentationInjector {
             il.Body.Variables.Add(zoneVar);
             // Store return value in a local variable (if needed)
             var returnVar = new VariableDefinition(il.Method.ReturnType);
-            if (method.ReturnType != typeof(void)) {
+            bool nonVoidReturnType = method is MethodInfo info && info.ReturnType != typeof(void);
+            if (nonVoidReturnType) {
                 il.Body.Variables.Add(returnVar);
             }
 
@@ -226,7 +264,7 @@ public static class InstrumentationInjector {
             var returnLabel = cur.DefineLabel();
             for (; cur.Index < il.Instrs.Count; cur.Index++) {
                 if (cur.Next?.OpCode == OpCodes.Ret) {
-                    if (method.ReturnType != typeof(void)) {
+                    if (nonVoidReturnType) {
                         // Store return result
                         cur.EmitStloc(returnVar);
                     }
@@ -238,13 +276,13 @@ public static class InstrumentationInjector {
 
             // End try-block
             cur.Index = il.Instrs.Count - 1;
-            if (method.ReturnType == typeof(void)) {
-                // Avoid dealing with retargeting labels
-                cur.Next!.OpCode = OpCodes.Nop;
-            } else {
+            if (nonVoidReturnType) {
                 // Store return result
                 cur.Next!.OpCode = OpCodes.Stloc;
                 cur.Next!.Operand = returnVar;
+            } else {
+                // Avoid dealing with retargeting labels
+                cur.Next!.OpCode = OpCodes.Nop;
             }
 
             cur.Index++;
@@ -260,7 +298,7 @@ public static class InstrumentationInjector {
             // End finally-block
             cur.EmitEndfinally();
 
-            if (method.ReturnType != typeof(void)) {
+            if (nonVoidReturnType) {
                 // Retrieve return result
                 cur.EmitLdloc(returnVar);
                 exceptionHandler.HandlerEnd = cur.Prev;
@@ -276,7 +314,7 @@ public static class InstrumentationInjector {
         }));
     }
 
-    private static void EmitZoneStart(this ILCursor cur, VariableReference zoneVariable, MethodInfo method, ProfileConfig config)
+    private static void EmitZoneStart(this ILCursor cur, VariableReference zoneVariable, MethodBase method, ProfileConfig config)
     {
         // Setup zone name
         if (config.CustomZoneNameDelegate != null)
