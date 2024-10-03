@@ -51,5 +51,7 @@ public class TracyHelperModule : EverestModule {
             hook.Dispose();
         }
         ILHooks.Clear();
+
+        InstrumentationInjector.Unload();
     }
 }

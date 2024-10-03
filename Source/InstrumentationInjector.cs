@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Threading;
+using Celeste.Mod.Helpers;
 using Microsoft.Xna.Framework;
 using Mono.Cecil.Cil;
 using Monocle;
@@ -17,23 +19,57 @@ public static class InstrumentationInjector {
         // General
         TracyHelperModule.Instance.ILHooks.Add(new ILHook(typeof(Game).GetMethod(nameof(Game.Tick))!, IL_Game_Tick));
 
-        ProfileMethod(typeof(Celeste).GetMethod(nameof(Celeste.Update), BindingFlags.NonPublic | BindingFlags.Instance)!, "Update", 0x2B7FDB);
-        ProfileMethod(typeof(Celeste).GetMethod(nameof(Celeste.Draw), BindingFlags.NonPublic | BindingFlags.Instance)!, "Draw", 0x21CC58);
+        ProfileMethod(typeof(Celeste).GetMethod(nameof(Celeste.Update), BindingFlags.NonPublic | BindingFlags.Instance)!, new ProfileConfig { ZoneName = "Update", Color = 0x2B7FDB });
+        ProfileMethod(typeof(Celeste).GetMethod(nameof(Celeste.Draw), BindingFlags.NonPublic | BindingFlags.Instance)!, new ProfileConfig { ZoneName = "Draw", Color = 0x21CC58 });
 
+        // Scenes
+        foreach (var sceneType in FakeAssembly.GetFakeEntryAssembly()
+                     .GetTypes()
+                     .Where(type => typeof(Scene).IsAssignableFrom(type)))
+        {
+            ProfileMethod(sceneType.GetMethod(nameof(Scene.BeforeUpdate), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)!, new ProfileConfig { Color = 0x2B7FDB });
+            ProfileMethod(sceneType.GetMethod(nameof(Scene.Update), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)!, new ProfileConfig { Color = 0x2B7FDB });
+            ProfileMethod(sceneType.GetMethod(nameof(Scene.AfterUpdate), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)!, new ProfileConfig { Color = 0x2B7FDB });
+            ProfileMethod(sceneType.GetMethod(nameof(Scene.BeforeRender), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)!, new ProfileConfig { Color = 0x21CC58 });
+            ProfileMethod(sceneType.GetMethod(nameof(Scene.Render), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)!, new ProfileConfig { Color = 0x21CC58 });
+            ProfileMethod(sceneType.GetMethod(nameof(Scene.AfterRender), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)!, new ProfileConfig { Color = 0x21CC58 });
+        }
+
+        // Misc
+        ProfileMethod(typeof(MInput).GetMethod(nameof(MInput.Update), BindingFlags.NonPublic | BindingFlags.Static)!, new ProfileConfig { Color = 0xC741D3 });
+        ProfileMethod(typeof(Audio).GetMethod(nameof(Audio.Update), BindingFlags.Public | BindingFlags.Static)!, new ProfileConfig { Color = 0xC741D3 });
+        ProfileMethod(typeof(AutoSplitterInfo).GetMethod(nameof(AutoSplitterInfo.Update), BindingFlags.Public | BindingFlags.Instance)!, new ProfileConfig { Color = 0xC741D3 });
+        ProfileMethod(typeof(Monocle.Commands).GetMethod(nameof(Monocle.Commands.UpdateOpen), BindingFlags.NonPublic | BindingFlags.Instance)!, new ProfileConfig { Color = 0xC741D3 });
+        ProfileMethod(typeof(Monocle.Commands).GetMethod(nameof(Monocle.Commands.UpdateClosed), BindingFlags.NonPublic | BindingFlags.Instance)!, new ProfileConfig { Color = 0xC741D3 });
+        ProfileMethod(typeof(Monocle.Commands).GetMethod(nameof(Monocle.Commands.Render), BindingFlags.NonPublic | BindingFlags.Instance)!, new ProfileConfig { Color = 0xC741D3 });
+
+        // Threading
+        IL.Celeste.RunThread.RunThreadWithLogging += IL_RunThreadWithLogging;
+
+        // Gameplay
         On.Monocle.EntityList.Add_Entity += On_EntityList_Add;
         On.Monocle.ComponentList.Add_Component += On_ComponentList_Add;
+        On.Monocle.RendererList.Add += On_RendererList_Add;
 
-        ProfileMethod(typeof(EntityList).GetMethod(nameof(EntityList.Update), BindingFlags.NonPublic | BindingFlags.Instance)!, "Entity Update", 0x1064C3);
-        ProfileMethod(typeof(EntityList).GetMethod(nameof(EntityList.Render))!, "Entity Render", 0x1B9D45);
-        ProfileMethod(typeof(EntityList).GetMethod(nameof(EntityList.RenderOnly))!, null, 0x1B9D45, null, null, NameEntityRenderOnly);
-        ProfileMethod(typeof(EntityList).GetMethod(nameof(EntityList.RenderOnlyFullMatch))!, null, 0x1B9D45, null, null, NameEntityRenderOnlyFullMatch);
-        ProfileMethod(typeof(EntityList).GetMethod(nameof(EntityList.RenderExcept))!, null, 0x1B9D45, null, null, NameEntityRenderExcept);
+        ProfileMethod(typeof(EntityList).GetMethod(nameof(EntityList.Update), BindingFlags.NonPublic | BindingFlags.Instance)!, new ProfileConfig { ZoneName = "Entities Update", Color = 0x1064C3 });
+        ProfileMethod(typeof(EntityList).GetMethod(nameof(EntityList.Render))!, new ProfileConfig { ZoneName = "Entities Render", Color = 0x1B9D45 });
+        ProfileMethod(typeof(EntityList).GetMethod(nameof(EntityList.RenderOnly))!, new ProfileConfig { CustomZoneNameDelegate = NameEntityRenderOnly, Color = 0x1B9D45 });
+        ProfileMethod(typeof(EntityList).GetMethod(nameof(EntityList.RenderOnlyFullMatch))!, new ProfileConfig { CustomZoneNameDelegate = NameEntityRenderOnlyFullMatch, Color = 0x1B9D45 });
+        ProfileMethod(typeof(EntityList).GetMethod(nameof(EntityList.RenderExcept))!, new ProfileConfig { CustomZoneNameDelegate = NameEntityRenderExcept, Color = 0x1B9D45 });
+
+        ProfileMethod(typeof(Renderer).GetMethod(nameof(Renderer.Update))!, new ProfileConfig { ZoneName = "Renderers Update", Color = 0x1064C3 });
+        ProfileMethod(typeof(Renderer).GetMethod(nameof(Renderer.BeforeRender))!, new ProfileConfig { ZoneName = "Renderers BeforeRender", Color = 0x1B9D45 });
+        ProfileMethod(typeof(Renderer).GetMethod(nameof(Renderer.Render))!, new ProfileConfig { ZoneName = "Renderers Render", Color = 0x1B9D45 });
+        ProfileMethod(typeof(Renderer).GetMethod(nameof(Renderer.AfterRender))!, new ProfileConfig { ZoneName = "Renderers AfterRender", Color = 0x1B9D45 });
+
+        // Loading
+
 
         return;
 
-        static string NameEntityRenderOnly(EntityList _, int tags) => $"Entity Render Only ({TagsToString(tags)})";
-        static string NameEntityRenderOnlyFullMatch(EntityList _, int tags) => $"Entity Render OnlyFullMatch ({TagsToString(tags)})";
-        static string NameEntityRenderExcept(EntityList _, int tags) => $"Entity Render Except ({TagsToString(tags)})";
+        static string NameEntityRenderOnly(EntityList _, int tags) => $"Entities RenderOnly ({TagsToString(tags)})";
+        static string NameEntityRenderOnlyFullMatch(EntityList _, int tags) => $"Entities RenderOnlyFullMatch ({TagsToString(tags)})";
+        static string NameEntityRenderExcept(EntityList _, int tags) => $"Entities RenderExcept ({TagsToString(tags)})";
 
         static string TagsToString(int tag) {
             StringBuilder builder = new();
@@ -53,12 +89,14 @@ public static class InstrumentationInjector {
     public static void Unload() {
         On.Monocle.EntityList.Add_Entity -= On_EntityList_Add;
         On.Monocle.ComponentList.Add_Component -= On_ComponentList_Add;
+        On.Monocle.RendererList.Add -= On_RendererList_Add;
+
+        IL.Celeste.RunThread.RunThreadWithLogging -= IL_RunThreadWithLogging;
 
         profiledTypes.Clear();
     }
 
-    private static void IL_Game_Tick(ILContext il)
-    {
+    private static void IL_Game_Tick(ILContext il) {
         var method = typeof(Game).GetMethod(nameof(Game.Tick))!;
 
         var zoneVar = new VariableDefinition(il.Import(typeof(Profiler.Zone)));
@@ -70,7 +108,7 @@ public static class InstrumentationInjector {
 
         cur.EmitDelegate(Profiler.EmitFrameMarkStart);
 
-        cur.EmitZoneStart(zoneVar, method, "Poll Events", 0xD24E4E);
+        cur.EmitZoneStart(zoneVar, method, new ProfileConfig { ZoneName = "Poll Events", Color = 0xD24E4E });
         cur.GotoNext(MoveType.After, instr => instr.MatchCallvirt("Microsoft.Xna.Framework.FNAPlatform/PollEventsFunc", "Invoke"));
         cur.EmitZoneEnd(zoneVar);
 
@@ -80,32 +118,77 @@ public static class InstrumentationInjector {
         cur.EmitDelegate(Profiler.EmitFrameMarkEnd);
     }
 
+    private static void IL_RunThreadWithLogging(ILContext il)
+    {
+        var method = typeof(RunThread).GetMethod(nameof(RunThread.RunThreadWithLogging), BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        var zoneVar = new VariableDefinition(il.Import(typeof(Profiler.Zone)));
+        il.Body.Variables.Add(zoneVar);
+
+        var cur = new ILCursor(il);
+
+        // Go to start of try-block
+        cur.GotoNext(instr => instr.MatchLdarg0());
+        cur.EmitZoneStart(zoneVar, method,  new ProfileConfig { Color = 0xC741D3, CustomZoneNameIL = nameCur => {
+            nameCur.EmitLdstr("Thread ");
+            nameCur.EmitCall(typeof(Thread).GetProperty(nameof(Thread.CurrentThread))!.GetGetMethod()!);
+            nameCur.EmitCall(typeof(Thread).GetProperty(nameof(Thread.Name))!.GetGetMethod()!);
+            nameCur.EmitCall(typeof(string).GetMethod(nameof(string.Concat), [typeof(string), typeof(string)])!);
+        }});
+
+        // Go the end of finally-block
+        cur.Index = il.Instrs.Count - 1;
+        cur.GotoPrev(MoveType.After, instr => instr.MatchNop());
+        cur.MoveAfterLabels();
+        cur.EmitZoneEnd(zoneVar);
+    }
+
+    // Dynamically apply profiling to certain types
     private static readonly HashSet<string> profiledTypes = [];
 
-    // Dynamically apply profiling to entities
     private static void On_EntityList_Add(On.Monocle.EntityList.orig_Add_Entity orig, EntityList self, Entity entity) {
         var entityType = entity.GetType();
         if (profiledTypes.Add(entityType.FullName!)) {
-            ProfileMethod(entityType.GetMethod(nameof(Entity.Update), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, []), null, 0x659CD9, $"{entityType.FullName}::{nameof(Entity.Update)}", $"{entityType.Name}.cs");
-            ProfileMethod(entityType.GetMethod(nameof(Entity.Render), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, []), null, 0x6ECC8D, $"{entityType.FullName}::{nameof(Entity.Render)}", $"{entityType.Name}.cs");
+            ProfileMethod(entityType.GetMethod(nameof(Entity.Update), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, []), new ProfileConfig { Color = 0x659CD9 });
+            ProfileMethod(entityType.GetMethod(nameof(Entity.Render), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, []), new ProfileConfig { Color = 0x6ECC8D });
         }
 
         orig(self, entity);
     }
-
-    // Dynamically apply profiling to components
     private static void On_ComponentList_Add(On.Monocle.ComponentList.orig_Add_Component orig, ComponentList self, Component component) {
         var componentType = component.GetType();
         if (profiledTypes.Add(componentType.FullName!)) {
-            ProfileMethod(componentType.GetMethod(nameof(Component.Update), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, []), null, 0x90ACCC, $"{componentType.FullName}::{nameof(Component.Update)}", $"{componentType.Name}.cs");
-            ProfileMethod(componentType.GetMethod(nameof(Component.Render), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, []), null, 0xA2ECBA, $"{componentType.FullName}::{nameof(Component.Render)}", $"{componentType.Name}.cs");
+            ProfileMethod(componentType.GetMethod(nameof(Component.Update), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, []), new ProfileConfig { Color = 0x90ACCC });
+            ProfileMethod(componentType.GetMethod(nameof(Component.Render), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, []), new ProfileConfig { Color = 0xA2ECBA });
         }
 
         orig(self, component);
     }
+    private static void On_RendererList_Add(On.Monocle.RendererList.orig_Add orig, RendererList self, Renderer renderer) {
+        var rendererType = renderer.GetType();
+        if (profiledTypes.Add(rendererType.FullName!)) {
+            ProfileMethod(rendererType.GetMethod(nameof(Renderer.Update), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, [typeof(Scene)]), new ProfileConfig { Color = 0x416996 });
+            ProfileMethod(rendererType.GetMethod(nameof(Renderer.BeforeRender), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, [typeof(Scene)]), new ProfileConfig { Color = 0x499B63 });
+            ProfileMethod(rendererType.GetMethod(nameof(Renderer.Render), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, [typeof(Scene)]), new ProfileConfig { Color = 0x499B63 });
+            ProfileMethod(rendererType.GetMethod(nameof(Renderer.AfterRender), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, [typeof(Scene)]), new ProfileConfig { Color = 0x499B63 });
+        }
+
+        orig(self, renderer);
+    }
+
+    private struct ProfileConfig() {
+        public string? ZoneName = null;
+        public uint Color = 0x000000;
+
+        public string? MemberNameOverride = null;
+        public string? FileNameOverride = null;
+
+        public Delegate? CustomZoneNameDelegate = null;
+        public Action<ILCursor>? CustomZoneNameIL = null;
+    }
 
     /// Inserts a profiler zone for the specified method
-    private static void ProfileMethod(MethodInfo? method, string? zoneName = null, uint color = 0, string? memberName = null, string? fileName = null, Delegate? customZoneName = null) {
+    private static void ProfileMethod(MethodInfo? method, ProfileConfig config) {
         if (method == null) {
             return;
         }
@@ -134,7 +217,7 @@ public static class InstrumentationInjector {
             }
 
             // Begin profiler zone
-            cur.EmitZoneStart(zoneVar, method, zoneName, color, memberName, fileName, customZoneName);
+            cur.EmitZoneStart(zoneVar, method, config);
 
             // Begin try-block
             exceptionHandler.TryStart = cur.Next;
@@ -193,25 +276,39 @@ public static class InstrumentationInjector {
         }));
     }
 
-    private static void EmitZoneStart(this ILCursor cur, VariableReference zoneVariable, MethodInfo method, string? zoneName = null, uint color = 0, string? memberName = null, string? fileName = null, Delegate? customZoneName = null)
+    private static void EmitZoneStart(this ILCursor cur, VariableReference zoneVariable, MethodInfo method, ProfileConfig config)
     {
-        if (customZoneName != null) {
+        // Setup zone name
+        if (config.CustomZoneNameDelegate != null)
+        {
             int paramCount = method.GetParameters().Length + (method.IsStatic ? 0 : 1);
             for (int i = 0; i < paramCount; i++) {
                 cur.EmitLdarg(i);
             }
-            cur.EmitDelegate(customZoneName);
-        } else if (zoneName == null) {
-            cur.EmitLdnull(); // zoneName
+            cur.EmitDelegate(config.CustomZoneNameDelegate);
+        } else if (config.CustomZoneNameIL != null) {
+            config.CustomZoneNameIL(cur);
+        } else if (config.ZoneName != null) {
+            cur.EmitLdstr(config.ZoneName);
         } else {
-            cur.EmitLdstr(zoneName);
+            if (method.IsStatic | !method.IsVirtual) {
+                cur.EmitLdnull();
+            } else {
+                cur.EmitLdstr((config.MemberNameOverride ?? $"{method.DeclaringType!.FullName}::{method.Name}") + " (");
+                cur.EmitLdarg0();
+                cur.EmitCallvirt(typeof(object).GetMethod(nameof(GetType))!);
+                cur.EmitCallvirt(typeof(Type).GetProperty(nameof(Type.FullName))!.GetGetMethod()!);
+                cur.EmitLdstr(")");
+                cur.EmitCall(typeof(string).GetMethod(nameof(string.Concat), [typeof(string), typeof(string), typeof(string)])!);
+            }
         }
+
         cur.EmitLdcI4(1/*true*/); // active
-        cur.EmitLdcI4(color);
+        cur.EmitLdcI4(config.Color);
         cur.EmitLdnull(); // text
         cur.EmitLdcI4(0); // lineNumber
-        cur.EmitLdstr(fileName ?? $"{method.DeclaringType!.Name}.cs"); // filePath
-        cur.EmitLdstr(memberName ?? $"{method.DeclaringType!.FullName}::{method.Name}"); // memberName
+        cur.EmitLdstr(config.FileNameOverride ?? $"{method.DeclaringType?.Name ?? "<unknown>"}.cs"); // filePath
+        cur.EmitLdstr(config.MemberNameOverride ?? $"{method.DeclaringType?.FullName ?? "<unknown>"}::{method.Name}"); // memberName
         cur.EmitDelegate(Profiler.BeginZone);
         cur.EmitStloc(zoneVariable);
     }
