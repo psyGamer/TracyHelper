@@ -77,6 +77,10 @@ fn installTracy(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
         .file = tracy_dep.path("public/TracyClient.cpp"),
         .flags = &.{},
     });
+    tracy_client.addCSourceFile(.{
+        .file = b.path("wrapper.cpp"),
+        .flags = &.{},
+    });
     tracy_client.defineCMacro("TRACY_ENABLE", null);
 
     // See https://github.com/wolfpld/tracy/blob/v0.11.1/public/TracyClient.cpp#L54-L57

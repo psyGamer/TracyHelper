@@ -220,6 +220,10 @@ public static unsafe partial class PInvoke
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial void TracySetThreadName(CString name);
 
+    [LibraryImport(LibraryName, EntryPoint = "TracyCSetProgramName")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void TracySetProgramName(CString name);
+
     #endregion
     #region Types
 

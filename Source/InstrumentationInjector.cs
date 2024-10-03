@@ -1,14 +1,11 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using Celeste.Mod.Helpers;
 using Microsoft.Xna.Framework;
 using Mono.Cecil.Cil;
 using Monocle;
 using MonoMod.Cil;
 using MonoMod.RuntimeDetour;
-using MonoMod.Utils;
 
 namespace Celeste.Mod.TracyHelper;
 
@@ -21,10 +18,12 @@ public static class InstrumentationInjector {
         ProfileMethod(typeof(Celeste).GetMethod(nameof(Celeste.Update), BindingFlags.NonPublic | BindingFlags.Instance)!, "Update", 0x2B7FDB);
         ProfileMethod(typeof(Celeste).GetMethod(nameof(Celeste.Draw), BindingFlags.NonPublic | BindingFlags.Instance)!, "Draw", 0x21CC58);
 
-        On.Monocle.Scene.Add_Entity += On_Scene_Add;
+        On.Monocle.EntityList.Add_Entity += On_EntityList_Add;
+        On.Monocle.ComponentList.Add_Component += On_ComponentList_Add;
     }
     public static void Unload() {
-        On.Monocle.Scene.Add_Entity -= On_Scene_Add;
+        On.Monocle.EntityList.Add_Entity -= On_EntityList_Add;
+        On.Monocle.ComponentList.Add_Component -= On_ComponentList_Add;
 
         profiledTypes.Clear();
     }
@@ -38,9 +37,9 @@ public static class InstrumentationInjector {
 
         var cur = new ILCursor(il);
 
-        cur.EmitZoneStart(zoneVar, method, "Wait for Frame", 0x6B6B6B);
         cur.GotoNext(instr => instr.MatchLdsfld("Microsoft.Xna.Framework.FNAPlatform", "PollEvents"));
-        cur.EmitZoneEnd(zoneVar);
+
+        cur.EmitDelegate(Profiler.EmitFrameMarkStart);
 
         cur.EmitZoneStart(zoneVar, method, "Poll Events", 0xD24E4E);
         cur.GotoNext(MoveType.After, instr => instr.MatchCallvirt("Microsoft.Xna.Framework.FNAPlatform/PollEventsFunc", "Invoke"));
@@ -48,12 +47,14 @@ public static class InstrumentationInjector {
 
         // End frame
         cur.Index = il.Instrs.Count - 1;
-        cur.EmitDelegate(Profiler.EmitFrameMark);
+
+        cur.EmitDelegate(Profiler.EmitFrameMarkEnd);
     }
 
-    // Dynamically apply profiling to entities
     private static readonly HashSet<string> profiledTypes = [];
-    private static void On_Scene_Add(On.Monocle.Scene.orig_Add_Entity orig, Scene self, Entity entity) {
+
+    // Dynamically apply profiling to entities
+    private static void On_EntityList_Add(On.Monocle.EntityList.orig_Add_Entity orig, EntityList self, Entity entity) {
         var entityType = entity.GetType();
         if (profiledTypes.Add(entityType.FullName!)) {
             ProfileMethod(entityType.GetMethod(nameof(Entity.Update), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, []), null, 0x659CD9, $"{entityType.FullName}::{nameof(Entity.Update)}", $"{entityType.Name}.cs");
@@ -61,6 +62,17 @@ public static class InstrumentationInjector {
         }
 
         orig(self, entity);
+    }
+
+    // Dynamically apply profiling to components
+    private static void On_ComponentList_Add(On.Monocle.ComponentList.orig_Add_Component orig, ComponentList self, Component component) {
+        var componentType = component.GetType();
+        if (profiledTypes.Add(componentType.FullName!)) {
+            ProfileMethod(componentType.GetMethod(nameof(Component.Update), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, []), null, 0x659CD9, $"{componentType.FullName}::{nameof(Component.Update)}", $"{componentType.Name}.cs");
+            ProfileMethod(componentType.GetMethod(nameof(Component.Render), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, []), null, 0x6ECC8D, $"{componentType.FullName}::{nameof(Component.Render)}", $"{componentType.Name}.cs");
+        }
+
+        orig(self, component);
     }
 
     /// Inserts a profiler zone for the specified method

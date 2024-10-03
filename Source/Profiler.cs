@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Celeste.Mod.TracyHelper.Tracy;
 using static Celeste.Mod.TracyHelper.Tracy.PInvoke;
@@ -10,17 +11,17 @@ public static class Profiler {
 
     /// Wrapper around tracy zones
     public readonly struct Zone : IDisposable {
-        private readonly PInvoke.TracyCZoneCtx Context;
+        private readonly TracyCZoneCtx Context;
 
         public uint Id => Context.Data.Id;
         public int Active => Context.Data.Active;
 
-        internal Zone(PInvoke.TracyCZoneCtx context) {
+        internal Zone(TracyCZoneCtx context) {
             Context = context;
         }
 
         public void EmitName(string name) {
-            using var namestr = Profiler.GetCString(name, out var nameln);
+            using var namestr = GetCString(name, out var nameln);
             TracyEmitZoneName(Context, namestr, nameln);
         }
 
@@ -29,7 +30,7 @@ public static class Profiler {
         }
 
         public void EmitText(string text) {
-            using var textstr = Profiler.GetCString(text, out var textln);
+            using var textstr = GetCString(text, out var textln);
             TracyEmitZoneText(Context, textstr, textln);
         }
 
@@ -90,7 +91,7 @@ public static class Profiler {
 
     #endregion
     #region Plots
-/*
+
     public enum PlotType {
         /// <summary>
         /// Values will be displayed as plain numbers.
@@ -110,7 +111,7 @@ public static class Profiler {
 
     // Plot names need to be cached for the lifetime of the program
     // seealso Tracy docs section 3.1
-    private static readonly Dictionary<string, CString> PlotNameCache = new Dictionary<string, CString>();
+    private static readonly Dictionary<string, CString> PlotNameCache = [];
 
     /// <summary>
     /// Configure how Tracy will display plotted values.
@@ -162,25 +163,23 @@ public static class Profiler {
         }
         return plotCString;
     }
-*/
+
     #endregion
     #region General
 
     /// Emit the top-level frame marker.
     /// Tracy C++ API and docs refer to this as the <c>FrameMark</c> macro.
-    public static void EmitFrameMark()
-    {
-        TracyEmitFrameMark(null);
-    }
+    public static void EmitFrameMark() => TracyEmitFrameMark(null);
+    public static void EmitFrameMarkStart() => TracyEmitFrameMarkStart(null);
+    public static void EmitFrameMarkEnd() => TracyEmitFrameMarkEnd(null);
 
     /// <summary>
     /// Is the app connected to the external profiler?
     /// </summary>
     /// <returns></returns>
-    public static bool IsConnected()
-    {
-        return Convert.ToBoolean(TracyConnected());
-    }
+    public static bool IsConnected() => Convert.ToBoolean(TracyConnected());
+
+    public static void SetProgramName(string name) => TracySetProgramName((CString)name);
 
     /// Creates a <seealso cref="CString"/> for use by Tracy.
     /// Also returns the length of the string for interop convenience.

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
+using Celeste.Mod.TracyHelper.Tracy;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using Mono.Cecil.Cil;
@@ -35,9 +36,8 @@ public class TracyHelperModule : EverestModule {
         }
     }
 
-    public override void Load()
-    {
-
+    public override void Load() {
+        Profiler.SetProgramName("Celeste");
     }
 
     public override void Unload() {
@@ -52,6 +52,4 @@ public class TracyHelperModule : EverestModule {
         }
         ILHooks.Clear();
     }
-
-
 }
