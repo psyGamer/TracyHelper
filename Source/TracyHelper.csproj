@@ -42,7 +42,7 @@
     <PackageMod Files="@(FilesToPackage)" OutputPath="..\TracyHelper.zip"/>
   </Target>
 
-  <PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <PathMap>$(MSBuildProjectDirectory)=TracyHelper/</PathMap>
   </PropertyGroup>
 

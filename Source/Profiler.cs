@@ -20,18 +20,22 @@ public static class Profiler {
             Context = context;
         }
 
-        public void EmitName(string name) {
-            using var namestr = GetCString(name, out var nameln);
-            TracyEmitZoneName(Context, namestr, nameln);
+        public string Name {
+            set {
+                using var nameStr = GetCString(value, out ulong nameLen);
+                TracyEmitZoneName(Context, nameStr, nameLen);
+            }
         }
 
-        public void EmitColor(uint color) {
-            TracyEmitZoneColor(Context, color);
+        public string Text {
+            set {
+                using var textStr = GetCString(value, out ulong textLen);
+                TracyEmitZoneText(Context, textStr, textLen);
+            }
         }
 
-        public void EmitText(string text) {
-            using var textstr = GetCString(text, out var textln);
-            TracyEmitZoneText(Context, textstr, textln);
+        public uint Color {
+            set => TracyEmitZoneColor(Context, value);
         }
 
         public void Dispose() {
@@ -64,7 +68,7 @@ public static class Profiler {
     public static Zone BeginZone(
         string? zoneName = null,
         bool active = true,
-        ColorType color = ColorType.Black,
+        uint color = 0x000000,
         string? text = null,
         [CallerLineNumber] int lineNumber = 0,
         [CallerFilePath] string? filePath = null,
@@ -78,7 +82,7 @@ public static class Profiler {
         var context = TracyEmitZoneBeginAlloc(srcLocId, active ? 1 : 0);
 
         if (color != 0) {
-            TracyEmitZoneColor(context, (uint)color);
+            TracyEmitZoneColor(context, color);
         }
 
         if (text != null) {
