@@ -2,10 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.Loader;
 using System.Text;
 using System.Threading;
 using Celeste.Mod.Helpers;
 using Microsoft.Xna.Framework;
+using Mono.Cecil;
 using Mono.Cecil.Cil;
 using Monocle;
 using MonoMod.Cil;
@@ -107,8 +109,6 @@ public static class InstrumentationInjector {
     }
 
     private static void IL_Game_Tick(ILContext il) {
-        var method = typeof(Game).GetMethod(nameof(Game.Tick))!;
-
         var zoneVar = new VariableDefinition(il.Import(typeof(Profiler.Zone)));
         il.Body.Variables.Add(zoneVar);
 
@@ -118,7 +118,7 @@ public static class InstrumentationInjector {
 
         cur.EmitDelegate(Profiler.EmitFrameMarkStart);
 
-        cur.EmitZoneStart(zoneVar, method, new ProfileConfig { ZoneName = "Poll Events", Color = 0xD24E4E });
+        cur.EmitZoneStart(zoneVar, new ProfileConfig { ZoneName = "Poll Events", Color = 0xD24E4E });
         cur.GotoNext(MoveType.After, instr => instr.MatchCallvirt("Microsoft.Xna.Framework.FNAPlatform/PollEventsFunc", "Invoke"));
         cur.EmitZoneEnd(zoneVar);
 
@@ -130,8 +130,6 @@ public static class InstrumentationInjector {
 
     private static void IL_RunThreadWithLogging(ILContext il)
     {
-        var method = typeof(RunThread).GetMethod(nameof(RunThread.RunThreadWithLogging), BindingFlags.NonPublic | BindingFlags.Static)!;
-
         var zoneVar = new VariableDefinition(il.Import(typeof(Profiler.Zone)));
         il.Body.Variables.Add(zoneVar);
 
@@ -139,7 +137,7 @@ public static class InstrumentationInjector {
 
         // Go to start of try-block
         cur.GotoNext(instr => instr.MatchLdarg0());
-        cur.EmitZoneStart(zoneVar, method,  new ProfileConfig { Color = 0xC741D3, CustomZoneNameIL = nameCur => {
+        cur.EmitZoneStart(zoneVar,  new ProfileConfig { Color = 0xC741D3, CustomZoneNameIL = nameCur => {
             nameCur.EmitLdstr("Thread ");
             nameCur.EmitCall(typeof(Thread).GetProperty(nameof(Thread.CurrentThread))!.GetGetMethod()!);
             nameCur.EmitCall(typeof(Thread).GetProperty(nameof(Thread.Name))!.GetGetMethod()!);
@@ -193,22 +191,20 @@ public static class InstrumentationInjector {
     }
 
     private static void IL_LoadingThread(ILContext il) {
-        var method = typeof(LevelLoader).GetMethod(nameof(LevelLoader.LoadingThread), BindingFlags.NonPublic | BindingFlags.Instance)!;
-
         var zoneVar = new VariableDefinition(il.Import(typeof(Profiler.Zone)));
         il.Body.Variables.Add(zoneVar);
 
         var cur = new ILCursor(il);
 
-        cur.EmitZoneStart(zoneVar, method, new ProfileConfig { ZoneName = "Setup Renderers", Color = 0x7A36DF });
+        cur.EmitZoneStart(zoneVar, new ProfileConfig { ZoneName = "Setup Renderers", Color = 0x7A36DF });
         cur.GotoNext(MoveType.After, instr => instr.MatchCallvirt<RendererList>(nameof(RendererList.UpdateLists)));
         cur.EmitZoneEnd(zoneVar);
 
-        cur.EmitZoneStart(zoneVar, method, new ProfileConfig { ZoneName = "Setup systems", Color = 0x7A36DF });
+        cur.EmitZoneStart(zoneVar, new ProfileConfig { ZoneName = "Setup systems", Color = 0x7A36DF });
         cur.GotoNext(instr => instr.MatchLdsfld("Celeste.GFX", nameof(GFX.FGAutotiler)));
         cur.EmitZoneEnd(zoneVar);
 
-        cur.EmitZoneStart(zoneVar, method, new ProfileConfig { ZoneName = "Setup tiles", Color = 0x7A36DF });
+        cur.EmitZoneStart(zoneVar, new ProfileConfig { ZoneName = "Setup tiles", Color = 0x7A36DF });
         cur.Index = il.Instrs.Count - 1;
         cur.EmitZoneEnd(zoneVar);
     }
@@ -219,6 +215,7 @@ public static class InstrumentationInjector {
 
         public string? MemberNameOverride = null;
         public string? FileNameOverride = null;
+        public int LineOverride = 0;
 
         public Delegate? CustomZoneNameDelegate = null;
         public Action<ILCursor>? CustomZoneNameIL = null;
@@ -240,6 +237,12 @@ public static class InstrumentationInjector {
                 return;
             }
 
+            if (ResolveDebugInformation(method) is { } debugInfo) {
+                Logger.Verbose(TracyHelperModule.Tag, $"Resolved debug information for {method}: {debugInfo.FilePath} line {debugInfo.Line}");
+                config.FileNameOverride = debugInfo.FilePath;
+                config.LineOverride = debugInfo.Line;
+            }
+
             // Create a try-finally block to properly dispose the zone
             var exceptionHandler = new ExceptionHandler(ExceptionHandlerType.Finally);
             il.Body.ExceptionHandlers.Add(exceptionHandler);
@@ -247,15 +250,17 @@ public static class InstrumentationInjector {
             // Store zone in a local variable
             var zoneVar = new VariableDefinition(zoneType);
             il.Body.Variables.Add(zoneVar);
+
             // Store return value in a local variable (if needed)
             var returnVar = new VariableDefinition(il.Method.ReturnType);
-            bool nonVoidReturnType = method is MethodInfo info && info.ReturnType != typeof(void);
+            bool nonVoidReturnType = il.Method.ReturnType != il.Import(typeof(void));
+
             if (nonVoidReturnType) {
                 il.Body.Variables.Add(returnVar);
             }
 
             // Begin profiler zone
-            cur.EmitZoneStart(zoneVar, method, config);
+            cur.EmitZoneStart(zoneVar, config);
 
             // Begin try-block
             exceptionHandler.TryStart = cur.Next;
@@ -314,12 +319,56 @@ public static class InstrumentationInjector {
         }));
     }
 
-    private static void EmitZoneStart(this ILCursor cur, VariableReference zoneVariable, MethodBase method, ProfileConfig config)
+    private static (string FilePath, int Line)? ResolveDebugInformation(MethodBase method)
     {
+        var asm = method.DeclaringType!.Assembly;
+        var asmName = method.DeclaringType!.Assembly.GetName();
+
+        // Find assembly path
+        string asmPath;
+        if (AssemblyLoadContext.GetLoadContext(asm) is EverestModuleAssemblyContext asmCtx) {
+            asmPath = Everest.Relinker.GetCachedPath(asmCtx.ModuleMeta, asmName.Name);
+        } else {
+            asmPath = asm.Location;
+        }
+
+        var asmDef = AssemblyDefinition.ReadAssembly(asmPath, new ReaderParameters { ReadSymbols = true });
+        var typeDef = asmDef.MainModule.GetType(method.DeclaringType!.FullName, runtimeName: true).Resolve();
+        var methodDef = typeDef.Methods.Single(m => {
+            if (method.Name != m.Name) {
+                return false;
+
+            }
+
+            var runtimeParams = method.GetParameters();
+            for (int i = 0; i < runtimeParams.Length; i++) {
+                var runtimeParam = runtimeParams[i];
+                var asmParam = m.Parameters[i];
+
+                if (runtimeParam.ParameterType.FullName != asmParam.ParameterType.FullName) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+
+        if (!methodDef.HasCustomDebugInformations || !methodDef.DebugInformation.HasSequencePoints) {
+            return null;
+        }
+
+        var sequencePoint = methodDef.DebugInformation.SequencePoints[0];
+        return (sequencePoint.Document.Url, sequencePoint.StartLine);
+    }
+
+    private static void EmitZoneStart(this ILCursor cur, VariableReference zoneVariable, ProfileConfig config)
+    {
+        var method = cur.Method;
+
         // Setup zone name
         if (config.CustomZoneNameDelegate != null)
         {
-            int paramCount = method.GetParameters().Length + (method.IsStatic ? 0 : 1);
+            int paramCount = method.Parameters.Count + (method.IsStatic ? 0 : 1);
             for (int i = 0; i < paramCount; i++) {
                 cur.EmitLdarg(i);
             }
@@ -332,7 +381,7 @@ public static class InstrumentationInjector {
             if (method.IsStatic | !method.IsVirtual) {
                 cur.EmitLdnull();
             } else {
-                cur.EmitLdstr((config.MemberNameOverride ?? $"{method.DeclaringType!.FullName}::{method.Name}") + " (");
+                cur.EmitLdstr((config.MemberNameOverride ?? method.Name) + " (");
                 cur.EmitLdarg0();
                 cur.EmitCallvirt(typeof(object).GetMethod(nameof(GetType))!);
                 cur.EmitCallvirt(typeof(Type).GetProperty(nameof(Type.FullName))!.GetGetMethod()!);
@@ -342,11 +391,12 @@ public static class InstrumentationInjector {
         }
 
         cur.EmitLdcI4(1/*true*/); // active
-        cur.EmitLdcI4(config.Color);
+        cur.EmitLdcI4(config.Color); // color
         cur.EmitLdnull(); // text
-        cur.EmitLdcI4(0); // lineNumber
-        cur.EmitLdstr(config.FileNameOverride ?? $"{method.DeclaringType?.Name ?? "<unknown>"}.cs"); // filePath
-        cur.EmitLdstr(config.MemberNameOverride ?? $"{method.DeclaringType?.FullName ?? "<unknown>"}::{method.Name}"); // memberName
+        cur.EmitLdcI4(config.LineOverride); // lineNumber
+        // Slightly sketchy way to get the type name, but it's the best option..
+        cur.EmitLdstr(config.FileNameOverride ?? $"{method.Name.Split("::")[0].Split(".")[^1]}.cs"); // filePath
+        cur.EmitLdstr(config.MemberNameOverride ?? method.Name); // memberName
         cur.EmitDelegate(Profiler.BeginZone);
         cur.EmitStloc(zoneVariable);
     }
