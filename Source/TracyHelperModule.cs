@@ -1,8 +1,9 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using Mono.Cecil;
-using MonoMod;
 using MonoMod.InlineRT;
 using MonoMod.RuntimeDetour;
 
@@ -54,10 +55,13 @@ public class TracyHelperModule : EverestModule {
     }
 
     public override void Load() {
+        OnHooks.Add(new Hook(typeof(Everest.Relinker).GetMethod("GetRelinkedAssembly", BindingFlags.NonPublic | BindingFlags.Static)!, On_GetRelinkedAssembly));
+
         Profiler.SetProgramName("Celeste");
     }
 
     public override void Unload() {
+        // Cleanup hooks
         foreach (var hook in OnHooks)
         {
             hook.Dispose();
@@ -70,5 +74,29 @@ public class TracyHelperModule : EverestModule {
         ILHooks.Clear();
 
         InstrumentationInjector.Unload();
+    }
+
+    private delegate Assembly orig_GetRelinkedAssembly(EverestModuleMetadata meta, string asmName, string path, string symPath, Func<(Stream stream, Stream symStream)> streamOpener);
+    private static Assembly On_GetRelinkedAssembly(orig_GetRelinkedAssembly orig, EverestModuleMetadata meta, string asmName, string path, string symPath, Func<(Stream stream, Stream symStream)> streamOpener) {
+        // If the loaded mod depends on TracyHelper, it's not safe to cache the DLL since the cache doesn't notice if TracyHelper gets disabled
+        if (meta.Dependencies.Any(dep => dep.Name == Instance.Metadata.Name) ||
+            meta.OptionalDependencies.Any(dep => dep.Name == Instance.Metadata.Name))
+        {
+            string cachePath = Everest.Relinker.GetCachedPath(meta, asmName);
+            string cacheChecksumPath = Path.ChangeExtension(cachePath, ".sum");
+
+            if (File.Exists(cachePath)) {
+                File.Delete(cachePath);
+            }
+
+            var result = orig(meta, asmName, path, symPath, streamOpener);
+
+            // Invalidate checksum (can't delete DLL since it might be used)
+            File.WriteAllText(cacheChecksumPath, "Invalided by TracyHelper");
+
+            return result;
+        }
+
+        return orig(meta, asmName, path, symPath, streamOpener);
     }
 }

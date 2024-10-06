@@ -128,34 +128,6 @@ public static class ModInterop {
             }
 
             returnLabel.Target = cur.Prev;
-
-            Console.WriteLine(il);
         });
-        /*
-        if (MonoModRule.Modder.FindType("Celeste.Mod.TracyHelper.ModInterop").Resolve() is not { } t_ModInterop) {
-            return;
-        }
-
-        if (t_ModInterop.FindMethod("BeforeHook") is { } m_Before) {
-            Invoke(m_Before, [method, attrib, MonoModRule.Modder]);
-        }
-        if (t_ModInterop.FindMethod("InHook") is { } m_Hook) {
-            new ILContext(method).Invoke(il => {
-                Invoke(m_Hook, [method, attrib, MonoModRule.Modder, il]);
-            });
-        }
-        if (t_ModInterop.FindMethod("AfterHook") is { } m_After) {
-            Invoke(m_After, [method, attrib, MonoModRule.Modder]);
-        }
-
-        return;
-
-        static void Invoke(MethodDefinition method, object[] parameters) {
-            // Since we can't just invoke the API method, copy it instead
-            var apiCopy = new DynamicMethodDefinition("API", typeof(void), parameters.Select(param => param.GetType()).ToArray());
-            apiCopy.Definition.Body = method.Body;
-            apiCopy.Generate().Invoke(null, parameters);
-        }
-        */
     }
 }
