@@ -146,8 +146,8 @@ public static class InstrumentationInjector {
 
         // Go the end of finally-block
         cur.Index = il.Instrs.Count - 1;
-        cur.GotoPrev(MoveType.After, instr => instr.MatchNop());
-        cur.MoveAfterLabels();
+        cur.GotoPrev(instr => instr.MatchEndfinally());
+        cur.MoveBeforeLabels();
         cur.EmitZoneEnd(zoneVar);
     }
 
@@ -328,8 +328,7 @@ public static class InstrumentationInjector {
         }));
     }
 
-    private static (string FilePath, int Line)? ResolveDebugInformation(MethodBase method)
-    {
+    private static (string FilePath, int Line)? ResolveDebugInformation(MethodBase method) {
         var asm = method.DeclaringType!.Assembly;
         var asmName = method.DeclaringType!.Assembly.GetName();
 
@@ -377,7 +376,6 @@ public static class InstrumentationInjector {
     private static void EmitZoneStart(this ILCursor cur, VariableReference zoneVariable, bool isStatic, bool isVirtual, ProfileConfig config)
     {
         var method = cur.Method;
-        Console.WriteLine($"meth {cur.Method} {isStatic} / {isVirtual}");
 
         // Setup zone name
         if (config.CustomZoneNameDelegate != null)
